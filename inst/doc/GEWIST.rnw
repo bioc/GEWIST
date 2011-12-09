@@ -1,0 +1,308 @@
+\documentclass[a4paper]{article}
+\setlength{\parindent}{0in}
+\setlength{\parskip}{.1in}
+\setlength{\textwidth}{140mm}
+\setlength{\oddsidemargin}{10mm}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+%\VignetteIndexEntry{Using Animal}
+
+
+\title{Prioritizing SNPs for Genetic Interaction Testing with R package `\emph{GEWIST}'}
+\author{Wei Q. Deng and Guillaume Par$\acute{e}$}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+It is challenging to detect gene-environment interactions in a genome-wide 
+setting because of low statistical power and the heavy computational burden 
+involved. Par$\acute{e}$ (Par$\acute{e}$ et al, 2010) proposed a novel method - variance prioritization (VP) -
+for prioritizing single nucleotide polymorphisms (SNPs) by exploiting the interaction effects on the variance of
+quantitative traits.
+The prioritization is achieved by comparing the variance of a quantitative trait conditioned on three possible
+genotypes using Levene's test (Levene, 1960) for variance inequality. The variance prioritization procedure consists 
+of two steps: 
+\begin{enumerate}
+	\item Select SNPs with Levene's test p-value lower than their individual optimal variance prioritization
+thresholds ($\eta_{0}$). 
+
+	\item Test the selected SNPs against all other SNPs (i.e. gene-gene) or environmental covariates (i.e. gene-environment) using
+linear regression for interactions while correcting for $\eta_{0}*M$ tests (\emph{M} is the number of total SNPs
+tested).
+\end{enumerate}
+
+We then introduced a fast algorithm - Gene Environment Wide Interaction Search Threshold 
+(GEWIST; Deng \& Par$\acute{e}$, 2011) - to efficiently and accurately determine the optimal
+variance prioritization threshold for individual SNPs. The `\emph{GEWIST}' package provides functions to facilitate SNP prioritization using the algorithms described in Deng \& Par$\acute{e}$.
+
+We will first demonstrate how to compute the optimal variance prioritization p-value threshold $\eta_{0}$ with `\emph{GEWIST}' functions; and provide a working example ( simulated genotype and phenotype data) to illustrate the SNP prioritization process. 
+
+\section{Prioritization thresholds for SNPs of known interaction effect sizes}
+
+This section helps to illustrate the prioritization of a single SNP with known (estimated) interaction effect size using the function `\emph{gewistLevene}'.
+
+For example, given the inputs:
+\begin{itemize}
+	\item  minor allele frequency of the SNP $p = 20\%$ 
+	\item  total number of SNPs to be tested \emph{M} = 250,000
+	\item  sample size \emph{N} = 10,000 
+	\item  gene-environment interaction explains 0.2\% of the quantitative trait variance (\emph{theta\_gc})
+	\item  environmental covariate explains 15\% of the quantitative trait variance (\emph{theta\_c})
+	\item  number of simulations \emph{K} = 20,000 
+\end{itemize}
+
+
+<<echo=false>>=
+options(width= 70)
+@
+
+
+<<>>=
+library(GEWIST)
+optim_result <- gewistLevene(p=0.2, N=10000, theta_gc=0.002,
+ theta_c=0.15, M = 250000, K = 20000, verbose = FALSE)
+
+class(optim_result)
+print(optim_result)
+@ 
+
+The function then returns: 
+\begin{itemize}
+	\item the optimal VP p-value threshold $\eta_{0}$: \emph{Optimal\_pval\_threshold}
+	\item the optimal VP power obtained at $\eta_{0}$ while correcting for $\eta_{0}*M$ SNPs: \emph{Optimal\_VP\_power}
+	\item conventional power to detect an interaction while correcting for $M$ SNPs: \emph{Conventional\_power}
+\end{itemize}	
+
+For a single SNP, the prioritization is done by first applying Levene's test to the variance of quantitative trait conditional on its three genotypes , and
+comparing the p-value obtained to the optimal VP p-value threshold. Include this SNP for further interaction testing if Levene's test p-value $ < \eta_{0}$.
+
+
+There is also the `\emph{verbose}' option if the prioritization power to detect an interaction at p-value 
+thresholds other than the optimal p-value is desired. In the following example, the VP power of a single SNP with known interaction effect size, is graphed against p-value thresholds from 0.001 to 1 with 0.001 incremental increase (Figure 1). The blue line represents the power to detect an interaction correcting for all \emph{M} = 250,000 SNPs (\emph{Conventional\_power}).
+
+
+<<>>=
+optim_ver <- gewistLevene(p=0.2, N=10000, theta_gc=0.002,
+theta_c=0.2, M = 250000, K = 20000, verbose = TRUE)
+@
+
+<<fig=TRUE,echo=FALSE>>=
+plot(optim_ver, xlab = "Levene's test p-value threshold",
+       ylab = "Variance prioritization Power" ,pch = 20)
+abline(h = optim_ver[1000,2], col= "blue")
+mtext("Figure 1",cex=2)      
+@
+
+
+\section{Prioritization thresholds for SNPs of unknown interaction effect sizes}
+
+This section helps to illustrate the prioritization of a single SNP with unknown interaction effect size 
+using the function `\emph{effectPDF}'. 
+
+When it is reasonable to assume that multiple SNP-Covariate interactions of small effect sizes rather than
+ a few interactions of large effect are present, the effect sizes can be described by the Weibull distribution. 
+ Other available distributions include: beta distribution, normal distribution and uniform distribution.
+
+For example, given the inputs:
+\begin{itemize}
+	\item  minor allele frequency of the SNP \emph{p} = 10\% 
+	\item  total number of SNPs to be tested \emph{M} = 350,000
+	\item  sample size \emph{N} = 10,000 
+	\item  the interaction effect sizes range from 0.025\% to 0.3\% 
+	\item  gene-environment interaction effect size follows a Weibull distribution ($k = 0.8$, $\lambda = 0.3$)  
+	\item  environmental covariate explains 10\% of the quantitative trait variance (\emph{theta\_c})
+	\item  number of simulations \emph{K} = 10,000 
+	\item  the number of intervals for numerical integration \emph{nb\_incr} = 50
+\end{itemize}
+
+Note that the computational time is proportional to the number of intervals (\emph{nb\_incr} ) selected.
+
+<<>>=
+weibull_exp1 <- effectPDF(distribution = "weibull", parameter1 = 0.8, parameter2 = 0.3,
+parameter3 = NULL, p = 0.1 ,N = 10000, theta_c = 0.1, M = 350000, K = 10000, nb_incr = 50, range = c(0.025/100,0.3/100), verbose = FALSE)
+
+print(weibull_exp1)
+@
+
+The function returns the following:
+
+\begin{itemize}
+	\item  the optimal VP p-value threshold $\eta_{0}$: \emph{Optimal\_pval\_threshold}
+	\item  the expected optimal VP power obtained at $\eta_{0}$: \emph{Optimal\_VP\_power}
+	\item  the expected power assuming no prior information about the interaction effect size (i.e. uniform distribution) \emph{Conventional\_power}
+\end{itemize}	
+	
+Similarly, if the VP power at p-value thresholds other than the optimal p-value is of interest, the `\emph{verbose}' option
+will be useful. In the following example, the VP power of a single SNP with unknown interaction effect size, is graphed against p-value thresholds from 0.001 to 1 with 0.001 incremental increase (Figure 2). The blue line represents the power to detect an interaction correcting for all \emph{M} = 350,000 SNPs (\emph{Conventional\_power}).
+
+
+
+<<>>=
+weibull_exp2 <- effectPDF(distribution = "weibull", parameter1 = 0.8, parameter2 = 0.3,
+parameter3 = NULL, p = 0.1 ,N = 10000, theta_c = 0.1, M = 350000,
+K = 10000, nb_incr = 50, range = c(0.025/100,0.3/100), verbose = T)
+
+@
+
+<<fig=TRUE,echo=FALSE>>=
+plot(weibull_exp2, xlab = "Levene's test p-value threshold",
+	ylab = "Expected variance prioritization power" ,pch = 20)
+abline(h = weibull_exp2[,2][1000], col= "blue")	  
+mtext("Figure 2",cex=2)      
+@
+
+
+
+
+\section{Prioritizing SNPs for genetic interactions from scratch}
+
+Here we provide an example to help demonstrate SNP selection, from raw SNPs to prioritized SNPs. Instead of using genome-wide datasets, which could be time-consuming and computationally heavy, we will simulate a small dataset comprises of 100 SNPs and one quantitative phenotype collected from 10,000 individuals.    
+
+<<echo=FALSE>>=
+
+##### simulating SNPs 
+
+# number of SNPs
+
+	nb_SNPs <- 100
+	MAF <- round(sample(seq(0.05,0.5,length.out= nb_SNPs)),2)
+ 	SNPset <- data.frame(SNPname = paste("SNP", seq(1: nb_SNPs)), MAF)
+ 
+## genotype
+
+# number of individuals
+	N <- 10000
+
+	genotype.gen <- function(maf,n){
+	
+	n0 <- round(n*(1-maf)^2)
+	n1 <- round(n*maf*(1-maf)*2)
+	n2 <- n-n0-n1	
+	
+	c(n0,n1,n2)}
+
+GenoSet <- matrix(rep(NA,N*nb_SNPs),N,nb_SNPs)
+
+for (i in 1:nb_SNPs){ 
+GenoSet[,i] <- sample(rep(0:2,genotype.gen(SNPset[i,2],N)))
+}
+
+##### simulating Traits
+error <- rnorm(N)
+COV <-rnorm(N)
+
+b3 <- matrix(sample(c(sample(seq(0.01,0.1,0.01),20, replace=T),rep(0,nb_SNPs-20))),nb_SNPs,1)
+b2 <- 0.4
+
+Trait <-  as.vector((COV*GenoSet)%*%b3) + COV*b2 + error
+
+##### estimated theta_gc and theta_c
+
+INTSNPs <- which(as.vector(b3)!=0)
+
+num <- (as.vector(b3)[INTSNPs])^2*2*SNPset[INTSNPs,2]*(1-SNPset[INTSNPs,2])
+dem <- (num+b2^2+1)
+
+theta_c <- b2^2/mean(dem)
+theta_gc <-   mean(num/dem)
+@
+
+A list of inputs to prioritize SNPs for GxE interactions includes (not limited to): 
+
+\begin{itemize}
+	\item \emph{Trait}: quantitative phenotype collected from \emph{n} individuals $\{y_{1}, y_{2}, y_{3}... y_{n}\}$
+	\item \emph{GenoSet}: genotype data of \emph{m} SNPs for \emph{n} individuals in an \emph{n} by \emph{m} array
+	\item \emph{theta\_c}: estimated total quantitative trait variance explained by environmental covariate
+	\item \emph{theta\_gc}: estimated total quantitative trait variance explained by GxE interaction $\{theta\_gc_{1}, theta\_gc_{2}, theta\_gc_{3}... theta\_gc_{m}\}$ 
+	\item \emph{Cov}: covariate measurements collected from \emph{n} individuals $\{c_{1}, c_{2}, c_{3}... c_{n}\}$
+\end{itemize}
+
+\subsection{Step 1: Levene's test p-values}
+
+The first task is to obtain variance inequality p-value by performing Levene's test on the quantitative trait variance conditional on the genotypes for individual SNPs. We recommend using `\emph{leveneTest}' with option `\textit{center = mean}' from `\emph{car}' package [Fox J \& Weisberg S].
+
+INPUTS:   \emph{Trait} and \emph{GenoSet}
+
+<<>>=
+n  <- dim(GenoSet)[1]
+m <- dim(GenoSet)[2]
+
+library(car)
+
+levene_pval <- NA
+
+	for (i in 1: m) {
+		
+		levene_pval[i] <- leveneTest(Trait, as.factor(GenoSet[,i]),center = mean)[1,3]
+		
+			   }
+@
+
+OUTPUT: \emph{levene\_pval}: a vector of length \emph{m} = 100.
+
+
+\subsection{Step 2: Optimal Variance Prioritization P-value Threshold}
+
+We then need to calculate the optimal VP p-value threshold for individual SNPs using the `\emph{gewistLevene}' function.
+
+INPUTS:  \emph{Trait}, \emph{GenoSet},  \emph{theta\_c} and \emph{theta\_gc}
+
+<<>>=
+
+optimal_pval <- NA
+
+for ( i in 1: m){
+	
+optimal_pval[i] <- gewistLevene(p = SNPset[i,2], N = n, theta_gc = theta_gc, 
+theta_c = theta_c, M = m )$Optimal_pval
+		
+			    }
+			    
+@			    
+
+OUTPUT: \emph{optimal\_pval}: a vector of length \emph{m}
+			    
+The optimal VP p-value threshold is expected to change under the influence of many factors, namely, sample size, number of SNPs, minor allele frequency (MAF) of SNPs, and the proportion of variance explained by both the covariate and the interaction. However, the sample size and number of SNPs and the variance explained by the environmental covariate are fixed for a given study. Thus, for a genome-wide dataset, it is sensible to calculate an optimal VP p-value threshold matrix, where each entry corresponds to the optimal VP p-value for SNPs with different combinations of MAF and estimated interaction effect sizes.
+
+
+\subsection{Step 3: Interaction testing using prioritized SNPs}
+
+The SNPs are selected such that their Levene's test p-values from \textbf{Step 1} are lower than the optimal VP p-value threshold from \textbf{Step 2}. The subset of prioritized SNPs are tested for gene-environment interaction with the measured environmental covariate (or all other SNPs for gene-gene interaction) while correcting for only the chosen SNPs.
+
+INPUTS: \emph{Trait}, \emph{GenoSet},  \emph{theta\_c}, \emph{theta\_gc} and \emph{COV}
+
+<<>>=
+
+SNPind <- which(levene_pval < optimal_pval)
+
+ Reduced <- GenoSet[,SNPind]
+ 
+ intPval <- NA
+ 
+ 	for (j in 1: length(SNPind)) {
+ 
+ 		intPval[j] <- summary(lm(Trait~ Reduced[,j] * COV ))$coef[4,4]
+		
+ 						}
+@
+
+OUTPUTS: \emph{SNPind} (the index of prioritized SNPs), \emph{intPval} (interaction p-values of the prioritized SNPs)
+
+
+
+\section*{References}
+
+\begin{enumerate}
+	\item Par$\acute{e}$, G., Cook, N. R., Ridker, P. M., \& Chasman, D. I. (2010). On the use of variance per genotype as a tool to identify quantitative trait interaction effects: a report from the Women's Genome Health Study. \emph{PLoS genetics}, 6(6), e1000981. doi:10.1371/journal.pgen.1000981
+	
+	\item Levene H. 1960. Robust tests for equality of variances. In: Olkin I, editor.\emph{Contributions to Probability and Statistics: Essays in Honor of Harold Hotelling}. Stanford, CA: Stanford University Press. p 278-292
+	
+	\item Deng, W. Q., \& Par$\acute{e}$, G. (2011). A fast algorithm to optimize SNP prioritization for gene-gene and gene-environment interactions. \emph{Genetic epidemiology}, 35: 729-738. doi: 10.1002/gepi.20624
+	
+	\item John Fox and Sanford Weisberg (2011). An \{R\} Companion to Applied Regression, Second Edition. Thousand Oaks CA: Sage. 
+	URL: \url{http://socserv.socsci.mcmaster.ca/jfox/Books/Companion}
+\end{enumerate}
+\end{document}
+
