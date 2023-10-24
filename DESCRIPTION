@@ -1,7 +1,7 @@
 Package: GEWIST
 Type: Package
 Title: Gene Environment Wide Interaction Search Threshold
-Version: 1.46.0
+Version: 1.47.0
 Depends: R (>= 2.10), car
 Author: Wei Q. Deng, Guillaume Pare
 Maintainer: Wei Q. Deng <dengwq@mcmaster.ca>
